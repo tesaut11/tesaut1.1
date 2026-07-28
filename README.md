@@ -1,56 +1,51 @@
 # Evaluación de Estrategias de Autoadaptación en Microservicios Orquestados por Kubernetes
 
-Este repositorio contiene el código fuente, los archivos de configuración de infraestructura y los conjuntos de datos derivados del Proyecto de Integración Curricular desarrollado por **Angel Jhonel Pesantes Romero**, estudiante de la carrera de Computación (Itinerario: Ingeniería de Software) en la Universidad Nacional de Loja (UNL).
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.34-blue.svg)](https://kubernetes.io/)
+[![Grafana k6](https://img.shields.io/badge/Grafana_k6-v1.5-purple.svg)](https://k6.io/)
+[![Python](https://img.shields.io/badge/Python-3.13-yellow.svg)](https://www.python.org/)
 
-La investigación utiliza la arquitectura de referencia **Google Online Boutique** como caso de estudio para analizar el comportamiento de sistemas distribuidos bajo escenarios de estrés.
+Este repositorio contiene el código fuente, los archivos de configuración de infraestructura y los conjuntos de datos derivados del **Trabajo de Integración Curricular** desarrollado para la carrera de Computación de la **Universidad Nacional de Loja (UNL)**.
 
-## Objetivo del Repositorio
+La investigación utiliza la arquitectura de referencia **Google Online Boutique** como caso de estudio empírico para analizar el comportamiento de sistemas distribuidos bajo escenarios de estrés volumétrico estocástico.
 
-El propósito central de este espacio es garantizar la reproducibilidad de la investigación. Se proporcionan todos los recursos técnicos para que investigadores externos puedan instanciar el entorno experimental, ejecutar las simulaciones de carga y validar el análisis cuantitativo del Tiempo Medio de Recuperación (MTTR) y la variación de la latencia p95.
+## 🎯 Objetivo del Repositorio
 
-## Stack Tecnológico
+El propósito central de este espacio es garantizar la **reproducibilidad abierta** de la investigación. Aquí se proporcionan todos los recursos técnicos y manifiestos declarativos para que investigadores externos puedan instanciar el entorno experimental, inyectar las simulaciones de carga y validar el análisis cuantitativo del Tiempo Medio de Recuperación (MTTR) y la degradación de la latencia (p95).
+
+## 🛠️ Stack Tecnológico y Entorno
 
 El entorno de experimentación se fundamenta en las siguientes herramientas:
 
-* **Orquestación y Gestión de Contenedores:** Kubernetes (K8s) sobre Docker Desktop.
-* **Aplicación bajo estudio:** Google Online Boutique (Microservices Demo).
-* **Generación de Carga e Inyección de Estrés:** K6.
-* **Análisis de Datos:** Python (Pandas, NumPy y Matplotlib).
+* **Orquestación y Contenedores:** Kubernetes (K8s) ejecutado localmente sobre Docker Desktop (con soporte WSL2).
+* **Aplicación de Referencia:** Google Online Boutique (Microservices Demo).
+* **Mecanismos de Autoadaptación:** 
+  * *Metrics Server* y *Horizontal Pod Autoscaler (HPA)* para el escalamiento reactivo.
+  * *NGINX Ingress Controller* para la limitación de carga preventiva (*Rate Limiting*).
+* **Ingeniería del Caos (Inyección de Estrés):** Grafana K6.
+* **Procesamiento de Datos:** Python (Pandas, NumPy y Matplotlib).
 
-## Estructura del Proyecto
+## 📂 Estructura del Proyecto
 
-El repositorio se organiza siguiendo las fases del diseño metodológico:
+El repositorio se organiza siguiendo las fases del diseño metodológico del experimento:
 
-* `k8s-manifests/`: Manifiestos YAML para el despliegue de los microservicios, habilitación del Metrics Server y definición de las estrategias de autoadaptación (Horizontal Pod Autoscaler y Limitación de Carga).
-* `k6-scripts/`: Scripts en JavaScript para la ejecución de pruebas de rendimiento, incluyendo escenarios de validación funcional y pruebas de estrés escalables.
-* `data-analysis/`: Scripts de Python orientados al procesamiento de trazas de datos en formato CSV y la generación de indicadores estadísticos.
-* `docs/`: Documentación técnica complementaria, manuales de configuración y notas de campo.
+* 📁 `k8s-manifests/`: Manifiestos YAML para el despliegue de los once microservicios, configuración del Metrics Server y definición de las estrategias de mitigación (HPA y Throttling).
+* 📁 `k6-scripts/`: Scripts en JavaScript para K6, que incluyen la prueba de línea base y los escenarios de estrés con picos de 300 usuarios virtuales concurrentes.
+* 📁 `data-analysis/`: Scripts de Python orientados a la limpieza de datos JSON/CSV exportados por K6 y la renderización de los gráficos presentados en el documento final.
+* 📁 `docs/`: Documentación técnica complementaria, manuales de configuración del entorno y notas de ejecución.
 
-## Guía de Reproducción
+## ⚙️ Prerrequisitos
 
-Para replicar el entorno experimental y ejecutar los escenarios de prueba, siga este procedimiento:
+Antes de ejecutar las pruebas, asegúrese de tener instalado:
+* Docker Desktop con integración WSL2 habilitada.
+* `kubectl` configurado para apuntar a su clúster local.
+* [Grafana K6](https://k6.io/docs/get-started/installation/) instalado en su máquina anfitriona.
+* NGINX Ingress Controller habilitado en su clúster.
 
-1. **Clonación del repositorio:**
-   ```bash
-   git clone [https://github.com/tesaut11/tesaut1.1.git](https://github.com/tesaut11/tesaut1.1.git)
-   cd tesaut1.1
-2. **Despliegue de infraestructura y servicios de métricas:**
+## 🚀 Guía de Reproducción
 
-   ```Bash
-   kubectl apply -f k8s-manifests/metrics-fix.yaml
-   kubectl apply -f k8s-manifests/k8s-tesis.yaml
-   
-3. **Configuración de la estrategia de autoadaptación (Ejemplo: Escalamiento Horizontal):**
+Para replicar el entorno experimental y ejecutar los escenarios de prueba, siga este procedimiento paso a paso:
 
-   ```Bash
-   kubectl apply -f k8s-manifests/hpa-frontend.yaml
-   
-4. **Ejecución de inyección de carga y captura de datos:**
-
-   ```Bash
-   k6 run --out csv=resultados_scaling.csv k6-scripts/stress-scaling.js
-   
-Autor
-Angel Jhonel Pesantes Romero Carrera de Computación - Itinerario de Ingeniería de Software
-
-Universidad Nacional de Loja (UNL)
+**1. Clonación del repositorio:**
+```bash
+git clone [https://github.com/tesaut11/tesaut1.1.git](https://github.com/tesaut11/tesaut1.1.git)
+cd tesaut1.1
