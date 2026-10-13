@@ -78,7 +78,7 @@ kubectl apply -f ./kubernetes-manifests
 Para que el Escalamiento Horizontal (HPA) funcione, el clúster debe poder medir el consumo de CPU. Aplique el manifiesto de parche local:
 
 ```
-kubectl apply -f ./pruebas/01_escenarios_yaml/metrics-fix.yaml
+kubectl patch deployment metrics-server -n kube-system --type 'json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
 
 ```
 
