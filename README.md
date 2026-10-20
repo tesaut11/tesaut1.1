@@ -11,17 +11,19 @@ El objetivo principal de este repositorio es permitir que cualquier persona pued
 ## Herramientas y tecnologías
 
 El entorno de pruebas está construido con:
-- **Orquestación:** Kubernetes (K8s) corriendo en local con Docker Desktop y WSL2.
-- **Aplicación base:** Google Online Boutique.
-- **Estrategias de autoadaptación:**
-  - Metrics Server y Horizontal Pod Autoscaler (HPA) para el escalamiento.
-  - NGINX Ingress Controller para limitar el tráfico (Rate Limiting / Throttling).
-- **Pruebas de carga:** Grafana k6.
-- **Procesamiento de datos:** Python (Pandas, NumPy y Matplotlib).
+
+- Orquestación: Kubernetes (K8s) corriendo en local con Docker Desktop y WSL2.
+- Aplicación base: Google Online Boutique.
+- Estrategias de autoadaptación: 
+  * Metrics Server y Horizontal Pod Autoscaler (HPA) para el escalamiento.
+  * NGINX Ingress Controller para limitar el tráfico (Rate Limiting / Throttling).
+- Pruebas de carga: Grafana k6.
+- Procesamiento de datos: Python (Pandas, NumPy y Matplotlib).
 
 ## Organización de los archivos
 
 Las carpetas del proyecto están organizadas según las fases del experimento:
+
 - `kubernetes-manifests/`: Archivos YAML para desplegar los microservicios originales.
 - `pruebas/01_escenarios_yaml/`: Configuraciones de los escenarios evaluados (baseline, HPA, throttling) y el parche del Metrics Server.
 - `pruebas/02_k6_scripts/`: Scripts de JavaScript para ejecutar las pruebas con k6.
@@ -31,12 +33,11 @@ Las carpetas del proyecto están organizadas según las fases del experimento:
 ## Requisitos previos
 
 Antes de empezar, necesitas tener instalado:
+
 - Docker Desktop con la opción de WSL2 y Kubernetes local activada.
-- `kubectl` configurado para conectarse al clúster de `docker-desktop`.
+- `kubectl` configurado para conectarse al clúster de docker-desktop.
 - Grafana k6 instalado en tu computadora.
 - NGINX Ingress Controller habilitado en el clúster.
-
----
 
 ## Pasos para ejecutar las pruebas
 
@@ -45,43 +46,35 @@ Sigue estos pasos para replicar el entorno y ejecutar los escenarios:
 ### 1. Preparar el entorno base
 
 Primero, clona el repositorio y entra a la carpeta del proyecto:
+
 ```bash
 git clone https://github.com/tesaut11/tesaut1.1.git
 cd tesaut1.1
 ```
 
 Despliega todos los microservicios de la aplicación:
+
 ```bash
 kubectl apply -f ./kubernetes-manifests
 ```
 
 Para que el HPA pueda medir el consumo de CPU, aplica este parche al Metrics Server:
+
 ```bash
 kubectl patch deployment metrics-server -n kube-system --type 'json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
 ```
 *Nota: Espera alrededor de un minuto y verifica que está funcionando ejecutando `kubectl top pods`.*
 
-### 2. Optimizar el entorno local y configurar el acceso
+### 2. Configurar el acceso (Port-forward)
 
-Para evitar caídas de red bajo estrés (colapso del port-forward) y bloqueos al crear nuevas réplicas (ImagePullBackOff), ejecuta los siguientes comandos:
+Como k6 corre fuera del clúster, necesitamos crear un puente de red para poder enviarle tráfico a la aplicación. Abre una primera terminal y déjala corriendo con uno de estos dos comandos, dependiendo de lo que vayas a probar:
 
-**A. Precargar la imagen del Frontend en caché local:**
+Para probar el Baseline o el Escenario HPA (conexión directa):
 ```bash
-docker pull $(kubectl get deployment frontend -o=jsonpath='{$.spec.template.spec.containers[:1].image}')
-
-kubectl patch deployment frontend -p '{"spec": {"template": {"spec": {"containers": [{"name": "server", "imagePullPolicy": "IfNotPresent"}]}}}}'
+kubectl port-forward deployment/frontend 8080:8080
 ```
-*Nota: Esto obliga a Kubernetes a usar la copia local del contenedor en lugar de saturar la red intentando descargarla durante la prueba de estrés.*
 
-**B. Configurar acceso directo (Reemplaza al Port-forward):**
-
-Para probar el **Baseline o el Escenario HPA** (conexión directa), expón el servicio en la red nativa de Docker:
-```bash
-kubectl patch service frontend -p '{"spec": {"type": "LoadBalancer"}}'
-```
-*Apunta tu script k6 directamente a `http://localhost:8080` (o el puerto que asigne Docker).*
-
-Para probar el **Escenario Throttling** (conexión a través del Ingress):
+Para probar el Escenario Throttling (conexión a través del Ingress):
 ```bash
 kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 8080:80
 ```
@@ -90,17 +83,19 @@ kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 8080:80
 
 ### Prueba del Escenario 1: Escalamiento (HPA)
 
-1. En tu terminal, aplica la regla del HPA:
+Asegúrate de estar usando el port-forward directo al frontend.
+
+1. En una segunda terminal, aplica la regla del HPA:
 ```bash
 kubectl apply -f ./pruebas/01_escenarios_yaml/s1_hpa.yaml
 ```
 
-2. Pon a vigilar los pods del frontend para ver cómo se crean nuevas réplicas sin fallos de imagen:
+2. Pon a vigilar los pods del frontend para ver cómo se crean nuevas réplicas:
 ```bash
 kubectl get pods -l app=frontend -w
 ```
 
-3. Abre otra terminal y ejecuta la prueba de carga con k6 (asegúrate de que apunte a localhost):
+3. Abre una tercera terminal y ejecuta la prueba de carga con k6:
 ```bash
 k6 run ./pruebas/02_k6_scripts/stress-scaling.js
 ```
@@ -116,7 +111,7 @@ kubectl delete -f ./pruebas/01_escenarios_yaml/s1_hpa.yaml
 
 Asegúrate de estar usando el port-forward del Ingress Controller para que las reglas de NGINX surtan efecto.
 
-1. Aplica la política de limitación:
+1. En la segunda terminal, aplica la política de limitación:
 ```bash
 kubectl apply -f ./pruebas/01_escenarios_yaml/s2_throttling.yaml
 ```
@@ -126,7 +121,7 @@ kubectl apply -f ./pruebas/01_escenarios_yaml/s2_throttling.yaml
 kubectl get pods -l app=frontend -w
 ```
 
-3. Vuelve a lanzar el ataque. Esta vez verás que no se crean nuevos pods, pero k6 empezará a registrar errores HTTP 503 o 429:
+3. En la tercera terminal, vuelve a lanzar el ataque. Esta vez verás que no se crean nuevos pods, pero k6 empezará a registrar errores HTTP 503 o 429:
 ```bash
 k6 run ./pruebas/02_k6_scripts/stress-scaling.js
 ```
