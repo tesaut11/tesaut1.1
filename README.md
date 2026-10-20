@@ -1,145 +1,132 @@
 # Evaluación de Estrategias de Autoadaptación en Microservicios Orquestados por Kubernetes
 
-Este repositorio contiene el código fuente, los archivos de configuración de infraestructura y los conjuntos de datos derivados del Trabajo de Integración Curricular desarrollado para la carrera de Computación de la Universidad Nacional de Loja (UNL).
+Este repositorio contiene el código fuente, la configuración de la infraestructura y los datos obtenidos del Trabajo de Integración Curricular para la carrera de Computación de la Universidad Nacional de Loja (UNL).
 
-La investigación utiliza la arquitectura de referencia Google Online Boutique como caso de estudio empírico para analizar el comportamiento de sistemas distribuidos bajo escenarios de estrés volumétrico estocástico.
+En este proyecto se utiliza la arquitectura de Google Online Boutique como caso de estudio para analizar cómo se comportan los sistemas distribuidos ante escenarios de estrés y picos de tráfico.
 
-## 🎯 Objetivo del Repositorio
+## Propósito del repositorio
 
-El propósito central de este espacio es garantizar la reproducibilidad abierta de la investigación. Aquí se proporcionan todos los recursos técnicos y manifiestos declarativos para que investigadores externos puedan instanciar el entorno experimental, inyectar las simulaciones de carga y validar el análisis cuantitativo del Tiempo Medio de Recuperación (MTTR) y la degradación de la latencia (p95).
+El objetivo principal de este repositorio es permitir que cualquier persona pueda reproducir los experimentos de la investigación. Aquí encontrarás los recursos técnicos y los manifiestos de Kubernetes necesarios para levantar el entorno, lanzar las pruebas de carga y validar los resultados (como el tiempo de recuperación y la latencia).
 
-## 🛠️ Stack Tecnológico y Entorno
+## Herramientas y tecnologías
 
-El entorno de experimentación se fundamenta en las siguientes herramientas:
+El entorno de pruebas está construido con:
 
-* **Orquestación y Contenedores:** Kubernetes (K8s) ejecutado localmente sobre Docker Desktop (con soporte WSL2).
-* **Aplicación de Referencia:** Google Online Boutique (Microservices Demo).
-* **Mecanismos de Autoadaptación:**
-  * Metrics Server y Horizontal Pod Autoscaler (HPA) para el escalamiento reactivo.
-* **Procesamiento de Datos:** Python (Pandas, NumPy y Matplotlib).
+* Orquestación: Kubernetes (K8s) corriendo en local con Docker Desktop y WSL2.
+* Aplicación base: Google Online Boutique.
+* Estrategias de autoadaptación: 
+  * Metrics Server y Horizontal Pod Autoscaler (HPA) para el escalamiento.
+  * NGINX Ingress Controller para limitar el tráfico (Rate Limiting / Throttling).
+* Pruebas de carga: Grafana k6.
+* Procesamiento de datos: Python (Pandas, NumPy y Matplotlib).
 
-## 📂 Estructura del Proyecto
+## Organización de los archivos
 
-El repositorio se organiza siguiendo las fases del diseño metodológico del experimento, reflejando la estructura real del entorno de desarrollo:
+Las carpetas del proyecto están organizadas según las fases del experimento:
 
-* `📁 kubernetes-manifests/`: Manifiestos YAML originales para el despliegue de los once microservicios de la aplicación base.
-* `📁 pruebas/01_escenarios_yaml/`: Definición de las estrategias de mitigación evaluadas (`s0_baseline.yaml`, `s1_hpa.yaml`, `s2_throttling.yaml`) y parches de infraestructura (`metrics-fix.yaml`).
-* `📁 pruebas/02_k6_scripts/`: Scripts desarrollados en JavaScript para Grafana k6, que definen las rampas de calentamiento, carga nominal y los picos caóticos de estrés (ej. `stress-scaling.js`).
-* `📁 pruebas/03_resultados/`: Conjuntos de datos empíricos en bruto (archivos JSON/CSV) exportados tras las iteraciones de prueba.
-* `📁 pruebas/04_analisis_datos/`: Algoritmos en Python desarrollados para la limpieza de datos y la renderización de las gráficas vectoriales del documento final.
+* `kubernetes-manifests/`: Archivos YAML para desplegar los microservicios originales.
+* `pruebas/01_escenarios_yaml/`: Configuraciones de los escenarios evaluados (baseline, HPA, throttling) y el parche del Metrics Server.
+* `pruebas/02_k6_scripts/`: Scripts de JavaScript para ejecutar las pruebas con k6.
+* `pruebas/03_resultados/`: Archivos JSON y CSV con los datos en bruto generados por las pruebas.
+* `pruebas/04_analisis_datos/`: Scripts de Python para limpiar los datos y generar las gráficas del documento final.
 
-## ⚙️ Prerrequisitos
+## Requisitos previos
 
-Antes de ejecutar las pruebas, asegúrese de tener instalado:
+Antes de empezar, necesitas tener instalado:
 
-* Docker Desktop con integración WSL2 y el clúster de Kubernetes local habilitado.
-* `kubectl` configurado para apuntar a su clúster local (docker-desktop).
-* Grafana K6 instalado en su máquina anfitriona.
-* NGINX Ingress Controller habilitado en su clúster.
+* Docker Desktop con la opción de WSL2 y Kubernetes local activada.
+* `kubectl` configurado para conectarse al clúster de docker-desktop.
+* Grafana k6 instalado en tu computadora.
+* NGINX Ingress Controller habilitado en el clúster.
 
-## 🚀 Guía de Reproducción
+## Pasos para ejecutar las pruebas
 
-Para replicar el entorno experimental y ejecutar los escenarios de prueba (ideal para demostraciones o validación), siga este procedimiento paso a paso:
+Sigue estos pasos para replicar el entorno y ejecutar los escenarios:
 
-### Paso 1: Clonación del repositorio
+### 1. Preparar el entorno base
+
+Primero, clona el repositorio y entra a la carpeta del proyecto:
 
 ```bash
 git clone https://github.com/tesaut11/tesaut1.1.git
 cd tesaut1.1
 ```
 
-### Paso 2: Despliegue de la Aplicación Base (Línea Base)
-
-Instancie la arquitectura de microservicios de Google Online Boutique:
+Despliega todos los microservicios de la aplicación:
 
 ```bash
 kubectl apply -f ./kubernetes-manifests
 ```
 
-### Paso 3: Habilitación de la Telemetría (Metrics Server)
-
-Para que el Escalamiento Horizontal (HPA) funcione, el clúster debe poder medir el consumo de CPU. Aplique el manifiesto de parche local:
+Para que el HPA pueda medir el consumo de CPU, aplica este parche al Metrics Server:
 
 ```bash
 kubectl patch deployment metrics-server -n kube-system --type 'json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
 ```
+*Nota: Espera alrededor de un minuto y verifica que está funcionando ejecutando `kubectl top pods`.*
 
-*Nota: Espere unos 60 segundos y verifique que las métricas están siendo recolectadas ejecutando `kubectl top pods`.*
+### 2. Configurar el acceso (Port-forward)
 
-### Paso 4: Exposición del Servicio y Puerta de Red (Gateway/Ingress)
+Como k6 corre fuera del clúster, necesitamos crear un puente de red para poder enviarle tráfico a la aplicación. Abre una primera terminal y déjala corriendo con uno de estos dos comandos, dependiendo de lo que vayas a probar:
 
-Dado que K6 se ejecuta en la máquina anfitriona, es necesario exponer el punto de entrada de la aplicación. Dependiendo del escenario, abra una **Terminal 1** y mantenga en ejecución uno de los siguientes comandos durante las pruebas:
-
-**Opción A: Puente de red directo al frontend (Para Línea Base y Escenario HPA):**
+Para probar el Baseline o el Escenario HPA (conexión directa):
 ```bash
 kubectl port-forward deployment/frontend 8080:8080
 ```
 
-**Opción B: Puerta de Red a través del Ingress Controller (Para Escenario Throttling):**
-Para que las políticas de Rate Limiting surtan efecto, el tráfico debe ingresar por el NGINX Ingress Controller:
+Para probar el Escenario Throttling (conexión a través del Ingress):
 ```bash
 kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 8080:80
 ```
 
-## 🧪 Ejecución del Escenario 1: Escalamiento Horizontal (HPA)
+---
 
-1. Aplicar la política de autoadaptación (**Terminal 2**):
+### Prueba del Escenario 1: Escalamiento (HPA)
 
+Asegúrate de estar usando el port-forward directo al frontend.
+
+1. En una segunda terminal, aplica la regla del HPA:
 ```bash
 kubectl apply -f ./pruebas/01_escenarios_yaml/s1_hpa.yaml
 ```
 
-Verifique la correcta asignación del umbral (Target 50% CPU):
-
-```bash
-kubectl get hpa
-```
-
-2. Monitorear el clúster en tiempo real (**Terminal 2**):
-   Ejecute el siguiente comando filtrado para observar la creación dinámica de réplicas (Cold Start) del frontend ante la saturación:
-
+2. Pon a vigilar los pods del frontend para ver cómo se crean nuevas réplicas:
 ```bash
 kubectl get pods -l app=frontend -w
 ```
 
-3. Inyectar carga sintética con Grafana k6 (**Terminal 3**):
-   En una tercera terminal, dispare el ataque volumétrico (pico de 300 VUs) a través del puerto expuesto:
-
+3. Abre una tercera terminal y ejecuta la prueba de carga con k6:
 ```bash
 k6 run ./pruebas/02_k6_scripts/stress-scaling.js
 ```
 
-4. Limpieza post-prueba:
-
+4. Al terminar, limpia la configuración:
 ```bash
 kubectl delete -f ./pruebas/01_escenarios_yaml/s1_hpa.yaml
 ```
 
-## 🛡️ Ejecución del Escenario 2: Limitación de Carga (Throttling)
+---
 
-*(Asegúrese de estar utilizando la **Opción B** en el Paso 4 para que el tráfico pase por la Puerta de Red del Ingress).*
+### Prueba del Escenario 2: Throttling
 
-1. Aplicar la política de protección perimetral (**Terminal 2**):
+Asegúrate de estar usando el port-forward del Ingress Controller para que las reglas de NGINX surtan efecto.
 
+1. En la segunda terminal, aplica la política de limitación:
 ```bash
 kubectl apply -f ./pruebas/01_escenarios_yaml/s2_throttling.yaml
 ```
 
-2. Monitorear el clúster (**Terminal 2**):
-
+2. Pon a vigilar los pods nuevamente:
 ```bash
 kubectl get pods -l app=frontend -w
 ```
 
-3. Inyectar carga sintética (**Terminal 3**):
-   Ejecute nuevamente el script. En este escenario, Kubernetes no creará nuevos pods de frontend, pero K6 registrará el rechazo intencional del tráfico excedente (Errores HTTP 503 o 429 dependiendo de la configuración del Ingress):
-
+3. En la tercera terminal, vuelve a lanzar el ataque. Esta vez verás que no se crean nuevos pods, pero k6 empezará a registrar errores HTTP 503 o 429:
 ```bash
-  k6 run ./pruebas/02_k6_scripts/stress-scaling.js
+k6 run ./pruebas/02_k6_scripts/stress-scaling.js
 ```
 
-4. Limpieza final:
-
+4. Limpia la configuración final:
 ```bash
 kubectl delete -f ./pruebas/01_escenarios_yaml/s2_throttling.yaml
 ```
