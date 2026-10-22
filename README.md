@@ -23,7 +23,7 @@ El entorno de pruebas está construido con:
 
 Las carpetas del proyecto están organizadas según las fases del experimento:
 - `kubernetes-manifests/`: Archivos YAML para desplegar los microservicios originales.
-- `pruebas/01_escenarios_yaml/`: Configuraciones de los escenarios evaluados (baseline, HPA, throttling) y el parche del Metrics Server.
+- `pruebas/01_escenarios_yaml/`: Configuraciones de los escenarios evaluados (HPA, throttling) y el parche del Metrics Server.
 - `pruebas/02_k6_scripts/`: Scripts de JavaScript para ejecutar las pruebas con k6.
 - `pruebas/03_resultados/`: Archivos JSON y CSV con los datos en bruto generados por las pruebas.
 - `pruebas/04_analisis_datos/`: Scripts de Python para limpiar los datos y generar las gráficas del documento final.
@@ -40,7 +40,7 @@ Antes de empezar, necesitas tener instalado:
 
 ## Pasos para ejecutar las pruebas
 
-Sigue estos pasos para replicar el entorno y ejecutar los escenarios:
+Sigue estos pasos para replicar el entorno y ejecutar los escenarios de autoadaptación:
 
 ### 1. Preparar el entorno base
 
@@ -50,96 +50,78 @@ git clone https://github.com/tesaut11/tesaut1.1.git
 cd tesaut1.1
 ```
 
-Despliega todos los microservicios de la aplicación:
+Despliega los microservicios de la aplicación utilizando los manifiestos de release (para descargar las imágenes precompiladas oficiales y evitar errores locales):
 ```bash
-kubectl apply -f ./kubernetes-manifests
+kubectl apply -f ./release/kubernetes-manifests.yaml
+```
+
+Elimina el generador de carga por defecto (para que k6 sea nuestra única fuente de tráfico) y asigna los límites de recursos obligatorios al frontend:
+```bash
+kubectl delete deployment loadgenerator --ignore-not-found
+kubectl set resources deployment frontend -c server --requests=cpu=100m,memory=64Mi --limits=cpu=200m,memory=128Mi
 ```
 
 Para que el HPA pueda medir el consumo de CPU, aplica este parche al Metrics Server:
 ```bash
 kubectl patch deployment metrics-server -n kube-system --type 'json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
 ```
-> **Nota:** Espera alrededor de un minuto y verifica que está funcionando ejecutando `kubectl top pods`.
+> **Nota:** Espera alrededor de un minuto y verifica que todos los pods estén en estado `Running 1/1` ejecutando `kubectl get pods`, y que el monitor funcione con `kubectl top pods`.
 
 ### 2. Configurar el acceso (Port-forward)
 
-Como k6 corre fuera del clúster, necesitamos crear un puente de red para poder enviarle tráfico a la aplicación. Abre una primera terminal y déjala corriendo con uno de estos dos comandos, dependiendo de lo que vayas a probar:
+Como k6 corre fuera del clúster, necesitamos crear un puente de red. Abre una **terminal secundaria** y déjala corriendo con uno de estos dos comandos, dependiendo del escenario:
 
-**Para probar el Baseline o el Escenario HPA (conexión directa):**
+Para probar el **Escenario HPA** (conexión directa):
 ```bash
 kubectl port-forward deployment/frontend 8080:8080
 ```
 
-**Para probar el Escenario Throttling (conexión a través del Ingress):**
+Para probar el **Escenario Throttling** (conexión a través del Ingress):
 ```bash
 kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 8080:80
 ```
 
 ---
 
-### Prueba del Escenario 0: Baseline (Sin mitigación)
-
-Esta prueba demuestra cómo el sistema colapsa al no tener ninguna estrategia de adaptación activa. Asegúrate de estar usando el port-forward directo al frontend.
-
-1. Verifica que el sistema esté estable y solo exista una réplica del frontend:
-   ```bash
-   kubectl get pods -l app=frontend
-   ```
-
-2. Abre una terminal adicional y ejecuta la prueba de carga masiva:
-   ```bash
-   k6 run ./pruebas/02_k6_scripts/stress-scaling.js
-   ```
-> **Nota:** Al finalizar, observarás que los tiempos de respuesta se disparan y las peticiones fallan por saturación (Timeout).
-
----
-
 ### Prueba del Escenario 1: Escalamiento (HPA)
 
-Asegúrate de seguir usando el port-forward directo al frontend y de que el clúster se haya estabilizado de la prueba anterior.
+Asegúrate de usar el port-forward directo al `frontend`.
 
-1. En una terminal, aplica la regla del HPA:
-   ```bash
-   kubectl apply -f ./pruebas/01_escenarios_yaml/s1_hpa.yaml
-   ```
+1. En tu terminal principal, aplica la regla del HPA:
+```bash
+kubectl apply -f ./pruebas/01_escenarios_yaml/s1_hpa.yaml
+```
 
-2. Pon a vigilar los pods del frontend para ver cómo se crean nuevas réplicas dinámicamente:
-   ```bash
-   kubectl get pods -l app=frontend -w
-   ```
+2. Ejecuta la prueba de carga con k6 y exporta los resultados (cópialo todo en una sola línea):
+```bash
+k6 run --out json=./pruebas/03_resultados/s1_it1.json --summary-export=./pruebas/03_resultados/s1_it1_summary.json ./pruebas/02_k6_scripts/stress-scaling.js
+```
+> **Nota:** Durante la prueba, la latencia subirá temporalmente debido al tiempo de "cold start", pero el HPA creará réplicas nuevas para estabilizar el sistema y no perder transacciones.
 
-3. Ejecuta nuevamente la prueba de carga con k6:
-   ```bash
-   k6 run ./pruebas/02_k6_scripts/stress-scaling.js
-   ```
-
-4. Al terminar, limpia la configuración:
-   ```bash
-   kubectl delete -f ./pruebas/01_escenarios_yaml/s1_hpa.yaml
-   ```
+3. Al terminar, limpia la configuración y **restaura la réplica a 1** para no afectar futuras pruebas:
+```bash
+kubectl delete -f ./pruebas/01_escenarios_yaml/s1_hpa.yaml
+kubectl scale deployment/frontend --replicas=1
+```
 
 ---
 
 ### Prueba del Escenario 2: Throttling
 
-Asegúrate de cancelar el port-forward anterior y levantar el port-forward del Ingress Controller para que las reglas de NGINX surtan efecto.
+Asegúrate de **cancelar el port-forward anterior** y levantar el port-forward del **Ingress Controller** para que las reglas de NGINX surtan efecto.
 
 1. Aplica la política de limitación:
-   ```bash
-   kubectl apply -f ./pruebas/01_escenarios_yaml/s2_throttling.yaml
-   ```
+```bash
+kubectl apply -f ./pruebas/01_escenarios_yaml/s2_throttling.yaml
+```
 
-2. Pon a vigilar los pods nuevamente (notarás que esta vez no escalarán):
-   ```bash
-   kubectl get pods -l app=frontend -w
-   ```
+2. Ejecuta la prueba de carga exportando los resultados:
+```bash
+k6 run --out json=./pruebas/03_resultados/s2_it1.json --summary-export=./pruebas/03_resultados/s2_it1_summary.json ./pruebas/02_k6_scripts/stress-scaling.js
+```
+> **Nota:** En este escenario, k6 registrará una alta tasa de rechazos intencionales (alrededor del 90% de fallos con código HTTP 503 o 429). Esto es el comportamiento esperado: el Ingress protege al clúster, manteniendo una latencia p95 muy baja y un Tiempo Medio de Recuperación (MTTR) de 0s.
 
-3. Vuelve a lanzar el ataque. Esta vez verás que k6 empezará a registrar rechazos intencionales mediante errores HTTP 503 o 429 para proteger el sistema:
-   ```bash
-   k6 run ./pruebas/02_k6_scripts/stress-scaling.js
-   ```
-
-4. Limpia la configuración final:
-   ```bash
-   kubectl delete -f ./pruebas/01_escenarios_yaml/s2_throttling.yaml
-   ```
+3. Limpia la configuración final:
+```bash
+kubectl delete -f ./pruebas/01_escenarios_yaml/s2_throttling.yaml
+```
